@@ -1,0 +1,10 @@
+{
+  "name": "CondoFlow - Gestão de Condomínios",
+  "short_name": "CondoFlow",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f5f7fb",
+  "theme_color": "#0f766e",
+  "description": "Plataforma para comunicação, acesso, reservas, documentos, financeiro e operação condominial.",
+  "icons": []
+}

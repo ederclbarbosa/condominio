@@ -1,0 +1,43 @@
+-- CondoFlow PostgreSQL/Supabase schema blueprint
+create type app_role as enum ('admin','administradora','sindico','conselho','portaria','morador','prestador','zelador');
+create type ticket_status as enum ('aberto','em_analise','em_execucao','aguardando_morador','resolvido','cancelado');
+create type reservation_status as enum ('solicitada','aprovada','rejeitada','cancelada','concluida');
+
+create table users (id uuid primary key default gen_random_uuid(), full_name text not null, email text unique not null, phone text, avatar_url text, accepted_terms_at timestamptz, created_at timestamptz default now());
+create table condominiums (id uuid primary key default gen_random_uuid(), name text not null, cnpj text, address jsonb not null default '{}', blocks int default 0, total_units int default 0, manager_name text, syndic_user_id uuid references users(id), useful_phones jsonb default '[]', concierge_hours text, general_rules text, logo_url text, created_at timestamptz default now());
+create table user_roles (user_id uuid references users(id), condominium_id uuid references condominiums(id), role app_role not null, permissions jsonb default '{}', primary key(user_id, condominium_id, role));
+create table units (id uuid primary key default gen_random_uuid(), condominium_id uuid references condominiums(id) not null, block text, floor text, number text not null, unit_type text, owner_user_id uuid references users(id), tenant_user_id uuid references users(id), parking_spots jsonb default '[]', status text default 'ativa');
+create table residents (id uuid primary key default gen_random_uuid(), user_id uuid references users(id), unit_id uuid references units(id), resident_type text not null, access_permission text default 'app', validation_status text default 'pendente', lgpd_consent_at timestamptz);
+create table vehicles (id uuid primary key default gen_random_uuid(), unit_id uuid references units(id), plate text, model text, color text);
+create table pets (id uuid primary key default gen_random_uuid(), unit_id uuid references units(id), name text, species text, notes text);
+create table announcements (id uuid primary key default gen_random_uuid(), condominium_id uuid references condominiums(id), author_id uuid references users(id), title text not null, category text not null, body text not null, priority text default 'normal', pinned boolean default false, target jsonb default '{"scope":"all"}', attachments jsonb default '[]', created_at timestamptz default now());
+create table announcement_reads (announcement_id uuid references announcements(id), user_id uuid references users(id), read_at timestamptz default now(), primary key(announcement_id,user_id));
+create table chats (id uuid primary key default gen_random_uuid(), condominium_id uuid references condominiums(id), subject text, chat_type text, moderated boolean default true);
+create table chat_messages (id uuid primary key default gen_random_uuid(), chat_id uuid references chats(id), sender_id uuid references users(id), body text, attachments jsonb default '[]', status text default 'enviado', created_at timestamptz default now());
+create table tickets (id uuid primary key default gen_random_uuid(), condominium_id uuid references condominiums(id), unit_id uuid references units(id), opened_by uuid references users(id), assigned_to uuid references users(id), category text, urgency text, status ticket_status default 'aberto', description text, attachments jsonb default '[]', sla_due_at timestamptz, rating int, created_at timestamptz default now());
+create table ticket_comments (id uuid primary key default gen_random_uuid(), ticket_id uuid references tickets(id), author_id uuid references users(id), body text, visibility text default 'publico', created_at timestamptz default now());
+create table maintenance_assets (id uuid primary key default gen_random_uuid(), condominium_id uuid references condominiums(id), name text, asset_type text, preventive_plan jsonb default '{}', next_due_at date);
+create table maintenance_orders (id uuid primary key default gen_random_uuid(), asset_id uuid references maintenance_assets(id), provider_user_id uuid references users(id), status text, cost numeric(12,2), notes text, attachments jsonb default '[]');
+create table common_areas (id uuid primary key default gen_random_uuid(), condominium_id uuid references condominiums(id), name text, rules text, fee numeric(12,2) default 0, auto_approval boolean default false);
+create table reservations (id uuid primary key default gen_random_uuid(), common_area_id uuid references common_areas(id), unit_id uuid references units(id), requested_by uuid references users(id), starts_at timestamptz, ends_at timestamptz, status reservation_status default 'solicitada', guest_list jsonb default '[]');
+create table visitors (id uuid primary key default gen_random_uuid(), condominium_id uuid references condominiums(id), unit_id uuid references units(id), name text, document text, qr_code text, valid_from timestamptz, valid_until timestamptz, recurrence text, status text default 'autorizado');
+create table access_logs (id uuid primary key default gen_random_uuid(), visitor_id uuid references visitors(id), unit_id uuid references units(id), gate_user_id uuid references users(id), direction text, occurred_at timestamptz default now(), photo_url text);
+create table packages (id uuid primary key default gen_random_uuid(), condominium_id uuid references condominiums(id), unit_id uuid references units(id), registered_by uuid references users(id), status text default 'recebida', label_photo_url text, signature_url text, created_at timestamptz default now());
+create table financial_charges (id uuid primary key default gen_random_uuid(), unit_id uuid references units(id), due_date date, amount numeric(12,2), status text, boleto_url text);
+create table payments (id uuid primary key default gen_random_uuid(), charge_id uuid references financial_charges(id), paid_at timestamptz, amount numeric(12,2));
+create table expenses (id uuid primary key default gen_random_uuid(), condominium_id uuid references condominiums(id), category text, description text, amount numeric(12,2), paid_at date, attachment_url text);
+create table consumption_records (id uuid primary key default gen_random_uuid(), unit_id uuid references units(id), reference_month date, kind text, amount numeric(12,3), source text);
+create table documents (id uuid primary key default gen_random_uuid(), condominium_id uuid references condominiums(id), title text, category text, visibility jsonb default '{}', current_version int default 1, required_read boolean default false);
+create table document_versions (id uuid primary key default gen_random_uuid(), document_id uuid references documents(id), version int, file_url text, extracted_text text, created_at timestamptz default now());
+create table assemblies (id uuid primary key default gen_random_uuid(), condominium_id uuid references condominiums(id), title text, starts_at timestamptz, ends_at timestamptz, status text);
+create table assembly_agendas (id uuid primary key default gen_random_uuid(), assembly_id uuid references assemblies(id), title text, description text, voting_mode text);
+create table votes (id uuid primary key default gen_random_uuid(), agenda_id uuid references assembly_agendas(id), unit_id uuid references units(id), voter_id uuid references users(id), option text, weight numeric(10,4) default 1, created_at timestamptz default now());
+create table audit_logs (id uuid primary key default gen_random_uuid(), condominium_id uuid references condominiums(id), actor_id uuid references users(id), actor_role app_role, action text, entity text, entity_id uuid, ip inet, metadata jsonb default '{}', created_at timestamptz default now());
+create table notifications (id uuid primary key default gen_random_uuid(), condominium_id uuid references condominiums(id), user_id uuid references users(id), channel text, title text, body text, status text default 'pendente', created_at timestamptz default now());
+create table ai_document_chunks (id uuid primary key default gen_random_uuid(), document_version_id uuid references document_versions(id), condominium_id uuid references condominiums(id), chunk text not null, source_page int, embedding vector(1536));
+
+alter table condominiums enable row level security;
+alter table units enable row level security;
+alter table announcements enable row level security;
+alter table tickets enable row level security;
+-- RLS policies should bind auth.uid() to user_roles. Providers only read assigned maintenance_orders; portaria has no financial policies.
